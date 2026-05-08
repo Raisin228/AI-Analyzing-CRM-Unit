@@ -1,0 +1,385 @@
+================================================================================
+ТЕХНИЧЕСКОЕ ЗАДАНИЕ
+Сервис интеллектуального анализа клиентских отзывов
+================================================================================
+
+ВЕРСИЯ: 1.0
+ДАТА: май 2025
+
+--------------------------------------------------------------------------------
+1. ЦЕЛЬ ПРОЕКТА
+--------------------------------------------------------------------------------
+
+Разработать прототип сервиса, который:
+- Периодически опрашивает CRM и забирает новые отзывы клиентов
+- Анализирует каждый отзыв через локальную LLM (тональность, сущности)
+- Детектирует аномалии и рецидивы проблем по истории отзывов
+- Отправляет события обратно в CRM при наступлении триггеров
+
+--------------------------------------------------------------------------------
+2. АРХИТЕКТУРА
+--------------------------------------------------------------------------------
+
+СЕРВИСЫ:
+
+[crm_mock]   FastAPI. Порт 8000.
+             Хранит отзывы в памяти. Отдаёт по HTTP. Принимает события.
+
+[analyzer]   FastAPI. Порт 8001.
+             Поллит CRM, анализирует отзывы, детектирует паттерны, шлёт события.
+
+ИНФРАСТРУКТУРА:
+
+PostgreSQL 16  — персистентное хранилище. Порт 5432. БД: reviews_db.
+Redis 7        — кеш эмбеддингов + курсор поллера. Порт 6379.
+Redpanda       — Kafka-совместимый брокер. Порт 9092. Топик: reviews.raw
+Ollama         — локальный LLM. Порт 11434. Модель: llama3.1:8b.
+LangFuse       — трейсинг LLM-вызовов. Порт 3000.
+
+ПОТОК ДАННЫХ:
+
+1. Poller (каждые 30 сек) → GET /reviews?since=<cursor> → crm_mock
+2. Poller → produce → Kafka topic: reviews.raw
+3. LLM Pipeline → consume ← Kafka topic: reviews.raw
+4. LLM Pipeline → Ollama → результаты → INSERT → PostgreSQL
+5. Algorithms → PostgreSQL + FAISS (RAM) → детект паттернов
+6. Dispatcher → POST /events → crm_mock
+
+--------------------------------------------------------------------------------
+3. СЕРВИС: crm_mock
+--------------------------------------------------------------------------------
+
+ЭНДПОИНТЫ:
+
+GET  /health
+GET  /reviews?since=<ISO datetime>&limit=<int>   (default 50, max 200)
+GET  /products
+GET  /org
+POST /events
+GET  /events   (для дебага — список всех полученных событий)
+
+МОДЕЛИ ДАННЫХ:
+
+Review:
+    id:            int
+    customer_name: str
+    text:          str        — текст на русском
+    rating:        int        — 1..5
+    created_at:    datetime UTC
+    product_id:    int
+    is_processed:  bool = False
+
+Product:
+    id, name, category
+
+OrgUnit:
+    id, name, responsible_email
+
+EventType (enum):
+    critical_negative    — очень негативный отзыв независимо от рейтинга
+    sentiment_mismatch   — рейтинг не совпадает с тональностью текста
+    recurring_issue      — рецидив: жалоба попала в открытый кластер
+    volume_anomaly       — аномальный рост числа негативных отзывов
+    topic_shift          — смещение тематики жалоб
+
+IncomingEvent:
+    event_type, review_id, description, metadata: dict = {}
+
+SEEDER (генерация тестовых данных):
+
+Инструмент: Faker, локаль ru_RU.
+Количество: 200 отзывов при старте, хранятся в памяти.
+
+Состав:
+- ~40% честные негативные (низкий рейтинг + негативный текст)
+- ~30% честные позитивные (высокий рейтинг + позитивный текст)
+- ~20% mismatch: 4-5 звёзд + негативный текст
+- ~10% mismatch: 1-2 звезды + позитивный текст
+
+Временное распределение:
+- Размазаны по последним 14 дням.
+- Последние 2 дня намеренно больше негатива (имитация аномалии).
+
+Тематики жалоб: доставка, курьер, качество товара, поддержка, приложение.
+
+--------------------------------------------------------------------------------
+4. СЕРВИС: analyzer
+--------------------------------------------------------------------------------
+
+МОДУЛИ:
+
+db.py               — asyncpg пул, репозитории с сырым SQL
+poller.py           — APScheduler, опрос CRM, продьюсер в Kafka
+llm_pipeline.py     — LangGraph граф анализа одного отзыва
+embeddings.py       — E5 модель + FAISS индекс
+algo_recurrence.py  — детектор рецидивов
+algo_anomaly.py     — детектор аномалий
+dispatcher.py       — отправка событий в CRM
+
+СХЕМА БД (PostgreSQL):
+
+reviews:
+    id              SERIAL PRIMARY KEY
+    external_id     INT UNIQUE NOT NULL
+    customer_name   TEXT
+    text            TEXT NOT NULL
+    rating          SMALLINT
+    created_at      TIMESTAMPTZ NOT NULL
+    product_id      INT
+    sentiment       TEXT           — positive / negative / neutral
+    rating_mismatch BOOLEAN DEFAULT FALSE
+    processed_at    TIMESTAMPTZ
+    INDEX: (created_at), (sentiment), (product_id)
+
+review_entities:
+    id          SERIAL PRIMARY KEY
+    review_id   INT REFERENCES reviews(id)
+    entity      TEXT NOT NULL
+    is_issue    BOOLEAN DEFAULT FALSE
+    cluster_id  INT REFERENCES issue_clusters(id)
+    embedding   BYTEA              — сериализованный float32 вектор
+    INDEX: (review_id), (cluster_id), (is_issue)
+
+issue_clusters:
+    id          SERIAL PRIMARY KEY
+    label       TEXT NOT NULL
+    status      TEXT DEFAULT 'open'    — open / closed
+    created_at  TIMESTAMPTZ DEFAULT now()
+    updated_at  TIMESTAMPTZ DEFAULT now()
+    INDEX: (status)
+
+dispatched_events:
+    id          SERIAL PRIMARY KEY
+    event_id    UUID UNIQUE NOT NULL   — идемпотентность
+    event_type  TEXT NOT NULL
+    review_id   INT REFERENCES reviews(id)
+    description TEXT
+    metadata    JSONB DEFAULT '{}'
+    sent_at     TIMESTAMPTZ DEFAULT now()
+
+МОДУЛЬ poller.py:
+
+Фреймворк: APScheduler (AsyncIOScheduler)
+Интервал: 30 сек (env: POLL_INTERVAL_SEC)
+
+Алгоритм:
+1. Читает курсор из Redis (ключ: "crm:last_cursor")
+2. GET /reviews?since=<cursor>&limit=50
+3. Produce каждый отзыв в Kafka topic "reviews.raw"
+4. Обновляет курсор = max(created_at) из полученных отзывов
+5. Если новых нет — ничего не делает
+
+МОДУЛЬ llm_pipeline.py:
+
+Фреймворк: LangChain + LangGraph
+LLM: Ollama HTTP API, модель llama3.1:8b
+Observability: LangFuse callback handler
+
+Граф LangGraph — 4 ноды последовательно:
+
+  [extract_entities]
+      Вход: текст отзыва
+      Выход: {"entities": [...], "issues": [...]}
+
+  [classify_sentiment]
+      Вход: текст + сущности
+      Выход: {"sentiment": "negative", "confidence": 0.92}
+
+  [detect_mismatch]   — без LLM, чистый Python
+      mismatch = True если:
+          rating >= 4 И sentiment == "negative"  ИЛИ
+          rating <= 2 И sentiment == "positive"
+      Выход: {"mismatch": bool}
+
+  [save_results]
+      INSERT в reviews + review_entities через asyncpg
+      Выход: {"review_db_id": int}
+
+Формат ответа LLM: JSON (Ollama format="json").
+Retry: 3 попытки, backoff 2 сек.
+
+МОДУЛЬ embeddings.py:
+
+Модель: intfloat/multilingual-e5-large (sentence-transformers)
+Размерность: 1024. Устройство: CPU.
+
+FAISS:
+- Тип: IndexFlatIP (cosine через нормализацию)
+- Живёт в RAM
+- При старте: загружается из PG (SELECT WHERE is_issue=True)
+- При новой жалобе: faiss_index.add(вектор)
+
+Redis-кеш эмбеддингов:
+- Ключ: "emb:{sha256(text)}"
+- Значение: base64(numpy float32 array)
+- TTL: 7 дней
+
+Интерфейс:
+    get_embedding(text) -> np.ndarray
+    search_similar(vector, k=5) -> list[SearchResult]
+    add_to_index(entity_id, vector) -> None
+    rebuild_index() -> None
+
+МОДУЛЬ algo_recurrence.py:
+
+Алгоритм:
+1. Получить эмбеддинг новой жалобы
+2. FAISS kNN, k=5
+3. Для каждого результата:
+   — получить cluster_id из review_entities
+   — SELECT status FROM issue_clusters WHERE id = cluster_id
+   — если similarity >= 0.85 И status == 'open':
+     РЕЦИДИВ → триггер → добавить жалобу в кластер → STOP
+4. Если совпадений нет:
+   — INSERT новый кластер (status='open')
+   — привязать жалобу
+
+Закрытие кластеров (раз в час):
+- Кластеры open старше 3 дней
+- Если последние 5 отзывов >= 0.7 позитивных → status='closed'
+
+Порог: 0.85 (env: RECURRENCE_THRESHOLD)
+
+МОДУЛЬ algo_anomaly.py:
+
+Алгоритм 1 — Volume Anomaly (каждые 10 мин):
+1. COUNT негативных за последние 24ч
+2. Baseline: среднее за 7 предыдущих дней (по окнам 24ч)
+3. z-score = (текущее - среднее) / std_dev
+4. z-score >= 2.5 → триггер volume_anomaly
+5. Повтор не раньше чем через 4ч (Redis)
+
+Алгоритм 2 — Topic Shift (каждые 10 мин):
+1. Частота каждой сущности-жалобы за 24ч
+2. Baseline: та же агрегация за 7 дней
+3. Нормализация → P_current, P_baseline
+4. KL-дивергенция = sum(P * log(P / Q))
+5. KL >= 0.5 → триггер topic_shift
+   metadata: {"shifted_topic": сущность с наибольшим приростом}
+6. Повтор не раньше чем через 4ч (Redis)
+
+МОДУЛЬ dispatcher.py:
+
+Алгоритм:
+1. event_id = uuid4()
+2. Проверка в dispatched_events — если уже есть, пропускаем
+3. POST /events → crm_mock
+4. При успехе: INSERT в dispatched_events
+5. При ошибке: retry 3 раза, backoff 2 сек, затем логируем
+
+Триггеры:
+    detect_mismatch = True             → sentiment_mismatch
+    sentiment=negative, conf >= 0.9   → critical_negative
+    рецидив обнаружен                 → recurring_issue
+    z-score >= 2.5                    → volume_anomaly
+    KL >= 0.5                         → topic_shift
+
+--------------------------------------------------------------------------------
+5. ПЕРЕМЕННЫЕ ОКРУЖЕНИЯ
+--------------------------------------------------------------------------------
+
+crm_mock:
+    PORT=8000
+
+analyzer:
+    PORT=8001
+    DATABASE_URL=postgresql://user:password@postgres:5432/reviews_db
+    REDIS_URL=redis://redis:6379
+    KAFKA_BOOTSTRAP=redpanda:9092
+    KAFKA_TOPIC=reviews.raw
+    CRM_URL=http://crm_mock:8000
+    OLLAMA_URL=http://ollama:11434
+    OLLAMA_MODEL=llama3.1:8b
+    LANGFUSE_HOST=http://langfuse:3000
+    LANGFUSE_PUBLIC_KEY=...
+    LANGFUSE_SECRET_KEY=...
+    POLL_INTERVAL_SEC=30
+    RECURRENCE_THRESHOLD=0.85
+    ANOMALY_ZSCORE_THRESHOLD=2.5
+    ANOMALY_KL_THRESHOLD=0.5
+
+--------------------------------------------------------------------------------
+6. СТЕК ТЕХНОЛОГИЙ
+--------------------------------------------------------------------------------
+
+Python 3.11
+FastAPI 0.111+
+asyncpg               — сырой SQL, без ORM
+Alembic               — миграции
+LangChain + LangGraph — оркестрация LLM
+Ollama                — локальный инференс llama3.1:8b
+sentence-transformers — multilingual-e5-large
+faiss-cpu             — векторный поиск
+aiokafka              — Kafka клиент
+aioredis              — Redis клиент
+APScheduler           — планировщик задач
+LangFuse              — observability
+Faker                 — тестовые данные
+Docker + docker-compose
+
+--------------------------------------------------------------------------------
+7. ПЛАН (7 дней)
+--------------------------------------------------------------------------------
+
+День 1 — docker-compose, структура репо, /health эндпоинты, Ollama тянет модель
+День 2 — crm_mock: seeder + все эндпоинты
+День 3 — analyzer: db.py + alembic + poller.py → отзыв доходит до Kafka
+День 4 — llm_pipeline.py: все 4 ноды + LangFuse трейсинг
+День 5 — embeddings.py + algo_recurrence.py
+День 6 — algo_anomaly.py + dispatcher.py
+День 7 — резерв + README
+
+--------------------------------------------------------------------------------
+8. КРИТЕРИИ ГОТОВНОСТИ
+--------------------------------------------------------------------------------
+
+Минимум (для защиты):
+  [ ] docker-compose up поднимает всё
+  [ ] crm_mock отдаёт 200 отзывов
+  [ ] analyzer пишет результаты в PG
+  [ ] хотя бы 1 тип события доходит до crm_mock
+  [ ] LangFuse показывает трейсы
+  [ ] README с инструкцией
+
+Полный:
+  [ ] все 5 типов событий работают
+  [ ] рецидивы детектируются
+  [ ] аномалии детектируются на тестовых данных
+  [ ] Redis-кеш эмбеддингов работает
+  [ ] идемпотентность dispatcher
+
+--------------------------------------------------------------------------------
+9. СТРУКТУРА РЕПОЗИТОРИЯ
+--------------------------------------------------------------------------------
+
+review-analyzer/
+├── docker-compose.yml
+├── .env.example
+├── README.md
+└── services/
+    ├── crm_mock/
+    │   ├── Dockerfile
+    │   ├── pyproject.toml
+    │   └── app/
+    │       ├── main.py
+    │       ├── models.py
+    │       ├── seeder.py
+    │       └── routes/
+    │           ├── reviews.py
+    │           └── events.py
+    └── analyzer/
+        ├── Dockerfile
+        ├── pyproject.toml
+        └── app/
+            ├── main.py
+            ├── db.py
+            ├── poller.py
+            ├── llm_pipeline.py
+            ├── embeddings.py
+            ├── algo_recurrence.py
+            ├── algo_anomaly.py
+            └── dispatcher.py
+
+================================================================================
+КОНЕЦ ДОКУМЕНТА
+================================================================================
