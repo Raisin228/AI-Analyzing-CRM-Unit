@@ -3,14 +3,21 @@ name = "ai-analyzing-crm-unit"
 version = "0.1.0"
 description = ""
 authors = [
-    {name = "Raisin228",email = "bogdanatrosenko@gmail.com"}
+    { name = "Raisin228", email = "bogdanatrosenko@gmail.com" }
 ]
 readme = "README.md"
-requires-python = ">=3.9"
+requires-python = ">=3.11"
 dependencies = [
+    "fastapi (>=0.136.1,<0.137.0)",
+    "uvicorn (>=0.46.0,<0.47.0)"
 ]
 
 
 [build-system]
 requires = ["poetry-core>=2.0.0,<3.0.0"]
 build-backend = "poetry.core.masonry.api"
+
+[dependency-groups]
+crm_mock = [
+    "faker (>=40.15.0,<41.0.0)"
+]
