@@ -5,9 +5,11 @@ import logging
 from typing import Optional
 from uuid import UUID
 
-from analyzer.app.database.db import pool
+from analyzer.database.db import database
 
 logger = logging.getLogger(__name__)
+
+pool = database.pool()
 
 
 # ── reviews ──────────────────────────────────────────────────────────────────
