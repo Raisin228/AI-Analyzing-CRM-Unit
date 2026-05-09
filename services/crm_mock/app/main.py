@@ -6,9 +6,8 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI
 
 from . import state
-from .routes.events import router as events_router
-from .routes.reviews import router as reviews_router
-from .seeder import generate_reviews
+from .api.router import router as reviews_router
+from .seeder import GeneratorFakeUserReviews
 
 logging.basicConfig(level=logging.INFO)
 
@@ -17,17 +16,9 @@ logging.basicConfig(level=logging.INFO)
 async def lifespan(_application: FastAPI):
     """Код исполняемый до/после запуска приложения"""
 
-    state.reviews = generate_reviews(200)
+    state.reviews.extend(GeneratorFakeUserReviews.generate_reviews(200))
     yield
 
 
 app = FastAPI(title="CRM Mock", version="1.0.0", lifespan=lifespan)
 app.include_router(reviews_router)
-app.include_router(events_router)
-
-
-@app.get("/health")
-async def health():
-    """Проверка состояния сервиса."""
-
-    return {"status": "ok", "reviews": len(state.reviews), "events": len(state.events)}

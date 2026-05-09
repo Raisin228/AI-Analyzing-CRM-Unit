@@ -1,0 +1,13 @@
+# Dev overrides — применяются автоматически поверх docker-compose.yml
+# Монтируем локальный код в контейнер и включаем --reload
+
+services:
+  crm_mock:
+    volumes:
+      - ./services/crm_mock/app:/app/app
+    command: uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload
+
+  analyzer:
+    volumes:
+      - ./services/analyzer/app:/app/app
+    command: uvicorn app.main:app --host 0.0.0.0 --port 8001 --reload
