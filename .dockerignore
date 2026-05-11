@@ -1,0 +1,24 @@
+# Python
+**/__pycache__
+**/*.pyc
+**/*.pyo
+**/*.pyd
+**/.pytest_cache
+**/.mypy_cache
+**/.ruff_cache
+
+# Virtual envs
+.venv
+venv
+env
+
+# Dev artifacts
+**/.env
+*.md
+.git
+.gitignore
+
+# Data / models — не копируем в image, скачиваются в runtime volume
+**/*.bin
+**/*.safetensors
+hf_cache/
