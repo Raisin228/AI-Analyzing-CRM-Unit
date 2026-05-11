@@ -19,6 +19,8 @@ logger = logging.getLogger(__name__)
 _llm: Optional[ChatOllama] = None
 _langfuse_handler = None
 
+CATEGORIES = ("delivery", "courier", "payment", "product_quality", "support", "app", "other")
+
 
 def init_llm() -> None:
     global _llm, _langfuse_handler
@@ -43,20 +45,24 @@ def init_llm() -> None:
 
 # ── state ─────────────────────────────────────────────────────────────────────
 
+class CategoryItem(TypedDict):
+    name: str
+    is_issue: bool
+
+
 class ReviewState(TypedDict):
-    external_id: str       # CRM UUID
+    external_id: str
     text: str
     rating: int
     customer_name: str
-    product_id: str        # CRM UUID
+    product_id: str
     created_at: str
-    entities: list[str]
-    issues: list[str]
+    categories: list[CategoryItem]   # [{"name": "courier", "is_issue": True}, ...]
     sentiment: str
     confidence: float
     mismatch: bool
     review_db_id: Optional[int]
-    entity_ids: dict[str, int]   # issue_text → entity DB id
+    issue_entity_ids: dict[str, int]  # category → entity DB id
 
 
 # ── helpers ───────────────────────────────────────────────────────────────────
@@ -79,31 +85,34 @@ async def _call_llm(prompt: str) -> str:
 
 # ── graph nodes ───────────────────────────────────────────────────────────────
 
-async def extract_entities(state: ReviewState) -> dict:
+async def classify_categories(state: ReviewState) -> dict:
     prompt = (
-        "Ты анализатор отзывов. Из следующего отзыва клиента извлеки:\n"
-        "1. entities — список упомянутых сущностей (доставка, курьер, качество товара, поддержка, приложение и т.д.)\n"
-        "2. issues — список конкретных проблем (только если есть жалобы; пустой список если отзыв позитивный)\n\n"
+        "Проанализируй отзыв клиента и определи какие из следующих категорий в нём упомянуты.\n"
+        "Для каждой найденной категории укажи, является ли она проблемой (жалобой клиента).\n\n"
+        f"Доступные категории: {', '.join(CATEGORIES)}\n\n"
         f"Отзыв: {state['text']}\n\n"
-        'Ответ строго в JSON: {"entities": ["..."], "issues": ["..."]}'
+        'Ответ строго в JSON: {"categories": [{"name": "courier", "is_issue": true}, ...]}\n'
+        "Включай только категории, реально упомянутые в отзыве."
     )
     try:
         raw = await _call_llm(prompt)
         data = _extract_json(raw)
-        return {
-            "entities": data.get("entities", []),
-            "issues": data.get("issues", []),
-        }
+        items: list[CategoryItem] = [
+            item for item in data.get("categories", [])
+            if isinstance(item, dict) and item.get("name") in CATEGORIES
+        ]
+        return {"categories": items}
     except Exception as exc:
-        logger.error("extract_entities failed: %s", exc)
-        return {"entities": [], "issues": []}
+        logger.error("classify_categories failed: %s", exc)
+        return {"categories": []}
 
 
 async def classify_sentiment(state: ReviewState) -> dict:
+    issues = [c["name"] for c in state["categories"] if c.get("is_issue")]
     prompt = (
         "Определи тональность отзыва клиента.\n"
         f"Отзыв: {state['text']}\n"
-        f"Упомянутые проблемы: {state['issues']}\n\n"
+        f"Проблемные категории: {issues}\n\n"
         'Ответ строго в JSON: {"sentiment": "positive" | "negative" | "neutral", "confidence": 0.0..1.0}'
     )
     try:
@@ -147,33 +156,29 @@ async def save_results(state: ReviewState) -> dict:
         processed_at=now,
     )
     if review_db_id is None:
-        return {"review_db_id": None, "entity_ids": {}}
+        return {"review_db_id": None, "issue_entity_ids": {}}
 
-    entity_ids: dict[str, int] = {}
-    for entity in state["entities"]:
-        is_issue = entity in state["issues"]
-        emb_bytes: Optional[bytes] = None
+    issue_entity_ids: dict[str, int] = {}
+    for item in state["categories"]:
+        category = item["name"]
+        is_issue = bool(item.get("is_issue", False))
+        eid = await DAO.insert_entity(review_db_id, category, is_issue)
         if is_issue:
-            from . import embeddings
-            vec = await embeddings.get_embedding(entity)
-            emb_bytes = vec.tobytes()
-        eid = await DAO.insert_entity(review_db_id, entity, is_issue, emb_bytes)
-        if is_issue:
-            entity_ids[entity] = eid
+            issue_entity_ids[category] = eid
 
-    return {"review_db_id": review_db_id, "entity_ids": entity_ids}
+    return {"review_db_id": review_db_id, "issue_entity_ids": issue_entity_ids}
 
 
 # ── graph ─────────────────────────────────────────────────────────────────────
 
 def _build_graph():
     wf = StateGraph(ReviewState)
-    wf.add_node("extract_entities", extract_entities)
+    wf.add_node("classify_categories", classify_categories)
     wf.add_node("classify_sentiment", classify_sentiment)
     wf.add_node("detect_mismatch", detect_mismatch)
     wf.add_node("save_results", save_results)
-    wf.set_entry_point("extract_entities")
-    wf.add_edge("extract_entities", "classify_sentiment")
+    wf.set_entry_point("classify_categories")
+    wf.add_edge("classify_categories", "classify_sentiment")
     wf.add_edge("classify_sentiment", "detect_mismatch")
     wf.add_edge("detect_mismatch", "save_results")
     wf.add_edge("save_results", END)
@@ -202,13 +207,12 @@ async def process_review(review_data: dict) -> None:
         "customer_name": review_data.get("customer_name", ""),
         "product_id": str(review_data.get("product_id", "")),
         "created_at": str(review_data.get("created_at", "")),
-        "entities": [],
-        "issues": [],
+        "categories": [],
         "sentiment": "neutral",
         "confidence": 0.0,
         "mismatch": False,
         "review_db_id": None,
-        "entity_ids": {},
+        "issue_entity_ids": {},
     }
 
     result = await get_graph().ainvoke(state)
@@ -217,7 +221,6 @@ async def process_review(review_data: dict) -> None:
     if review_db_id is None:
         return
 
-    # Trigger: sentiment mismatch
     if result["mismatch"]:
         await dispatcher.send_event(
             "sentiment_mismatch",
@@ -225,7 +228,6 @@ async def process_review(review_data: dict) -> None:
             f"Рейтинг {result['rating']} не совпадает с тональностью «{result['sentiment']}»",
         )
 
-    # Trigger: critical negative
     if result["sentiment"] == "negative" and result["confidence"] >= 0.9:
         await dispatcher.send_event(
             "critical_negative",
@@ -234,16 +236,14 @@ async def process_review(review_data: dict) -> None:
             metadata={"confidence": result["confidence"]},
         )
 
-    # Trigger: recurrence check for each issue entity
-    entity_ids: dict[str, int] = result.get("entity_ids", {})
-    for issue_text, entity_id in entity_ids.items():
-        is_recurring = await algo_recurrence.check_and_handle(issue_text, entity_id, review_db_id)
+    for category, entity_id in result.get("issue_entity_ids", {}).items():
+        is_recurring = await algo_recurrence.check_and_handle(category, entity_id)
         if is_recurring:
             await dispatcher.send_event(
                 "recurring_issue",
                 crm_review_uuid,
-                f"Рецидив проблемы: «{issue_text}»",
-                metadata={"issue": issue_text},
+                f"Рецидив проблемы в категории «{category}»",
+                metadata={"category": category},
             )
             break
 

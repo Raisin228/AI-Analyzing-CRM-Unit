@@ -1,40 +1,25 @@
 import logging
 
-from .config import settings
-from . import embeddings
 from ..database import DAO
 
 logger = logging.getLogger(__name__)
 
 
-async def check_and_handle(issue_text: str, entity_id: int, review_id: int) -> bool:
+async def check_and_handle(category: str, entity_id: int) -> bool:
     """
-    Returns True if a recurrence was detected (entity belongs to an open cluster).
+    Returns True if a recurrence was detected (open cluster exists for this category).
     Adds entity to existing cluster or creates a new one.
     """
-    vec = await embeddings.get_embedding(issue_text)
-    neighbors = embeddings.search_similar(vec, k=5)
+    cluster_id = await DAO.get_open_cluster_by_category(category)
+    if cluster_id:
+        await DAO.update_entity_cluster(entity_id, cluster_id)
+        await DAO.touch_cluster(cluster_id)
+        logger.info("Recurrence detected: category=%s cluster_id=%s", category, cluster_id)
+        return True
 
-    for neighbor_entity_id, score in neighbors:
-        if score < settings.RECURRENCE_THRESHOLD:
-            continue
-
-        cluster_id = await DAO.get_entity_cluster(neighbor_entity_id)
-        if not cluster_id:
-            continue
-
-        status = await DAO.get_cluster_status(cluster_id)
-        if status == "open":
-            await DAO.update_entity_cluster(entity_id, cluster_id)
-            await DAO.touch_cluster(cluster_id)
-            logger.info("Recurrence detected: cluster_id=%s score=%.3f", cluster_id, score)
-            return True
-
-    # No open cluster matched — create new
-    cluster_id = await DAO.insert_cluster(issue_text[:200])
+    cluster_id = await DAO.insert_cluster(category)
     await DAO.update_entity_cluster(entity_id, cluster_id)
-    embeddings.add_to_index(entity_id, vec)
-    logger.info("New cluster created: id=%s label=%.40s", cluster_id, issue_text)
+    logger.info("New cluster created: id=%s category=%s", cluster_id, category)
     return False
 
 
@@ -48,4 +33,4 @@ async def close_stale_clusters() -> None:
         positive_ratio = sentiments.count("positive") / len(sentiments)
         if positive_ratio >= 0.7:
             await DAO.close_cluster(cid)
-            logger.info("Cluster %s closed (positive ratio=%.2f)", cid, positive_ratio)
+            logger.info("Cluster %s closed (positive_ratio=%.2f)", cid, positive_ratio)

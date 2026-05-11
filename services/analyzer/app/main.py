@@ -9,9 +9,10 @@ from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from fastapi import FastAPI
 
 from .config import settings
-from . import embeddings, poller, algo_anomaly, algo_recurrence
+from . import algo_anomaly, algo_recurrence
 from .llm_pipeline import consume_loop, init_llm
 from ..database import DBManager
+from ..kafka import KafkaManager
 
 from ..redis_service import RedisManager
 
@@ -51,17 +52,15 @@ async def lifespan(_app: FastAPI):
     redis = RedisManager(settings.REDIS_URL)
     await redis.connect()
 
-    # 3.1 Настройка embeddings
-    await embeddings.rebuild_index()
-
     # 4. Kafka producer
-    await poller.init_producer()
+    kafka = KafkaManager(settings.KAFKA_BOOTSTRAP)
+    await kafka.init_producer()
 
     # 5. LLM client + LangFuse
     init_llm()
 
     # 6. Scheduler
-    scheduler.add_job(poller.poll_crm, "interval", seconds=settings.POLL_INTERVAL_SEC, id="poller")
+    scheduler.add_job(kafka.poll_crm, "interval", seconds=settings.POLL_INTERVAL_SEC, id="poller")
     scheduler.add_job(algo_anomaly.check_volume_anomaly, "interval", minutes=10, id="vol_anomaly")
     scheduler.add_job(algo_anomaly.check_topic_shift, "interval", minutes=10, id="topic_shift")
     scheduler.add_job(algo_recurrence.close_stale_clusters, "interval", hours=1, id="close_clusters")
@@ -80,7 +79,7 @@ async def lifespan(_app: FastAPI):
     except asyncio.CancelledError:
         pass
     scheduler.shutdown(wait=False)
-    await poller.close_producer()
+    await kafka.close_producer()
     await redis.disconnect()
     await db.close_pool()
     logger.info("Analyzer shut down")
@@ -93,7 +92,4 @@ app = FastAPI(title="Analyzer", version="1.0.0", lifespan=lifespan)
 async def health():
     """Проверка состояния сервиса и кол-ва векторов."""
 
-    return {
-        "status": "ok",
-        "faiss_vectors": embeddings._index.ntotal if embeddings._index else 0,
-    }
+    return {"status": "ok"}

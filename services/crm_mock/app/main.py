@@ -16,7 +16,7 @@ logging.basicConfig(level=logging.INFO)
 async def lifespan(_application: FastAPI):
     """Код исполняемый до/после запуска приложения"""
 
-    state.reviews.extend(GeneratorFakeUserReviews.generate_reviews(200))
+    state.reviews.extend(GeneratorFakeUserReviews.generate_reviews(50))
     yield
 
 

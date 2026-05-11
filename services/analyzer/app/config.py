@@ -9,12 +9,15 @@ DOTENV = os.path.join(os.path.dirname(__file__), ".env")
 
 
 class Settings(BaseSettings):
-    PORT_ANALYZER: int = Field(default=8001)
     DB_USER: str = Field(default="user")
     DB_PASS: str = Field(default="user")
     DB_NAME: str = Field(default="postgresql")
     DB_HOST: str = Field(description="Хост базки", default="postgresql")
     DB_PORT: int = Field(default=5432)
+
+    PORT_ANALYZER: int = Field(default=8001)
+
+    CACHE_TTL: int = Field(description="Время живучести ключей в Redis", default=3600)
 
     REDIS_URL: str = "redis://localhost:6379"
     KAFKA_BOOTSTRAP: str = "localhost:9092"
@@ -26,7 +29,6 @@ class Settings(BaseSettings):
     LANGFUSE_PUBLIC_KEY: str = Field(default="")
     LANGFUSE_SECRET_KEY: str = Field(default="")
     POLL_INTERVAL_SEC: int = 30
-    RECURRENCE_THRESHOLD: float = 0.85
     ANOMALY_ZSCORE_THRESHOLD: float = 2.5
     ANOMALY_KL_THRESHOLD: float = 0.5
 

@@ -78,7 +78,7 @@ class GeneratorFakeUserReviews:
     """Создатель фейковых отзывов."""
 
     @staticmethod
-    def generate_reviews(count: int = 200) -> list[Review]:
+    def generate_reviews(count: int = 100) -> list[Review]:
         """
         Создание синтетических отзывов.
 

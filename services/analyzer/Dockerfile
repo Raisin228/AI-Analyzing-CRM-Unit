@@ -10,10 +10,6 @@ RUN apt-get update && apt-get install -y --no-install-recommends gcc g++ \
 
 COPY services/analyzer/requirements.txt ./
 
-# CPU-only torch идёт первым: sentence-transformers найдёт его уже
-# установленным и не скачает CUDA-вариант (~2.5 GB → ~700 MB).
-RUN pip install --no-cache-dir torch --extra-index-url https://download.pytorch.org/whl/cpu
-
 RUN pip install --no-cache-dir -r requirements.txt
 
 # ─ Stage 2: runtime ─
@@ -33,6 +29,7 @@ COPY services/analyzer/alembic/ ./alembic/
 COPY services/analyzer/__init__.py ./analyzer/__init__.py
 COPY services/analyzer/app/ ./analyzer/app/
 COPY services/analyzer/database/ ./analyzer/database/
+COPY services/analyzer/kafka/ ./analyzer/kafka/
 COPY services/analyzer/redis_service/ ./analyzer/redis_service/
 COPY services/analyzer/Embeddings/ ./analyzer/Embeddings/
 

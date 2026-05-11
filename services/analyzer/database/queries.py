@@ -16,12 +16,12 @@ class DAO:
     @classmethod
     async def insert_review(
             cls,
-            external_id: int,
+            external_id: str,
             customer_name: str,
             text: str,
             rating: int,
             created_at,
-            product_id: int,
+            product_id: str,
             sentiment: str,
             rating_mismatch: bool,
             processed_at,
@@ -44,21 +44,15 @@ class DAO:
     # ── review_entities ───────────────────────────────────────────────────────
 
     @classmethod
-    async def insert_entity(
-            cls,
-            review_id: int,
-            entity: str,
-            is_issue: bool,
-            embedding_bytes: Optional[bytes] = None,
-    ) -> int:
+    async def insert_entity(cls, review_id: int, category: str, is_issue: bool) -> int:
         async with DBManager.get().pool.acquire() as conn:
             row = await conn.fetchrow(
                 """
-                INSERT INTO review_entities (review_id, entity, is_issue, embedding)
-                VALUES ($1, $2, $3, $4)
+                INSERT INTO review_entities (review_id, category, is_issue)
+                VALUES ($1, $2, $3)
                 RETURNING id
                 """,
-                review_id, entity, is_issue, embedding_bytes,
+                review_id, category, is_issue,
             )
             return row["id"]
 
@@ -70,42 +64,25 @@ class DAO:
                 cluster_id, entity_id,
             )
 
-    @classmethod
-    async def get_entity_cluster(cls, entity_id: int) -> Optional[int]:
-        async with DBManager.get().pool.acquire() as conn:
-            row = await conn.fetchrow(
-                "SELECT cluster_id FROM review_entities WHERE id = $1",
-                entity_id,
-            )
-            return row["cluster_id"] if row else None
-
-    @classmethod
-    async def get_all_issue_embeddings(cls) -> list[tuple[int, bytes]]:
-        async with DBManager.get().pool.acquire() as conn:
-            rows = await conn.fetch(
-                "SELECT id, embedding FROM review_entities WHERE is_issue = TRUE AND embedding IS NOT NULL"
-            )
-            return [(r["id"], r["embedding"]) for r in rows]
-
     # ── issue_clusters ────────────────────────────────────────────────────────
 
     @classmethod
-    async def insert_cluster(cls, label: str) -> int:
+    async def insert_cluster(cls, category: str) -> int:
         async with DBManager.get().pool.acquire() as conn:
             row = await conn.fetchrow(
-                "INSERT INTO issue_clusters (label) VALUES ($1) RETURNING id",
-                label,
+                "INSERT INTO issue_clusters (category) VALUES ($1) RETURNING id",
+                category,
             )
             return row["id"]
 
     @classmethod
-    async def get_cluster_status(cls, cluster_id: int) -> Optional[str]:
+    async def get_open_cluster_by_category(cls, category: str) -> Optional[int]:
         async with DBManager.get().pool.acquire() as conn:
             row = await conn.fetchrow(
-                "SELECT status FROM issue_clusters WHERE id = $1",
-                cluster_id,
+                "SELECT id FROM issue_clusters WHERE category = $1 AND status = 'open'",
+                category,
             )
-            return row["status"] if row else None
+            return row["id"] if row else None
 
     @classmethod
     async def touch_cluster(cls, cluster_id: int) -> None:
@@ -120,8 +97,7 @@ class DAO:
         async with DBManager.get().pool.acquire() as conn:
             rows = await conn.fetch(
                 """
-                SELECT id
-                FROM issue_clusters
+                SELECT id FROM issue_clusters
                 WHERE status = 'open'
                   AND created_at < now() - interval '3 days'
                 """
@@ -135,7 +111,7 @@ class DAO:
                 """
                 SELECT r.sentiment
                 FROM reviews r
-                         JOIN review_entities re ON re.review_id = r.id
+                    JOIN review_entities re ON re.review_id = r.id
                 WHERE re.cluster_id = $1
                   AND r.sentiment IS NOT NULL
                 ORDER BY r.created_at DESC
@@ -154,13 +130,13 @@ class DAO:
             )
 
     # ── anomaly queries ───────────────────────────────────────────────────────
+
     @classmethod
     async def count_negative_last_24h(cls) -> int:
         async with DBManager.get().pool.acquire() as conn:
             return await conn.fetchval(
                 """
-                SELECT COUNT(*)
-                FROM reviews
+                SELECT COUNT(*) FROM reviews
                 WHERE sentiment = 'negative'
                   AND created_at >= now() - interval '24 hours'
                 """
@@ -168,12 +144,10 @@ class DAO:
 
     @classmethod
     async def count_negative_by_day_7d(cls) -> list[int]:
-        """Returns daily negative counts for the 7 days preceding the last 24h."""
         async with DBManager.get().pool.acquire() as conn:
             rows = await conn.fetch(
                 """
-                SELECT COUNT(*) AS cnt
-                FROM reviews
+                SELECT COUNT(*) AS cnt FROM reviews
                 WHERE sentiment = 'negative'
                   AND created_at >= now() - interval '8 days'
                   AND created_at < now() - interval '1 day'
@@ -184,37 +158,38 @@ class DAO:
             return [r["cnt"] for r in rows]
 
     @classmethod
-    async def issue_entity_counts_24h(cls) -> dict[str, int]:
+    async def issue_category_counts_24h(cls) -> dict[str, int]:
         async with DBManager.get().pool.acquire() as conn:
             rows = await conn.fetch(
                 """
-                SELECT re.entity, COUNT(*) AS cnt
+                SELECT re.category, COUNT(*) AS cnt
                 FROM review_entities re
-                         JOIN reviews r ON r.id = re.review_id
+                    JOIN reviews r ON r.id = re.review_id
                 WHERE re.is_issue = TRUE
                   AND r.created_at >= now() - interval '24 hours'
-                GROUP BY re.entity
+                GROUP BY re.category
                 """
             )
-            return {r["entity"]: r["cnt"] for r in rows}
+            return {r["category"]: r["cnt"] for r in rows}
 
     @classmethod
-    async def issue_entity_counts_7d(cls) -> dict[str, int]:
+    async def issue_category_counts_7d(cls) -> dict[str, int]:
         async with DBManager.get().pool.acquire() as conn:
             rows = await conn.fetch(
                 """
-                SELECT re.entity, COUNT(*) AS cnt
+                SELECT re.category, COUNT(*) AS cnt
                 FROM review_entities re
-                         JOIN reviews r ON r.id = re.review_id
+                    JOIN reviews r ON r.id = re.review_id
                 WHERE re.is_issue = TRUE
                   AND r.created_at >= now() - interval '8 days'
                   AND r.created_at < now() - interval '1 day'
-                GROUP BY re.entity
+                GROUP BY re.category
                 """
             )
-            return {r["entity"]: r["cnt"] for r in rows}
+            return {r["category"]: r["cnt"] for r in rows}
 
     # ── dispatched_events ─────────────────────────────────────────────────────
+
     @classmethod
     async def event_already_sent(cls, event_id: UUID) -> bool:
         async with DBManager.get().pool.acquire() as conn:

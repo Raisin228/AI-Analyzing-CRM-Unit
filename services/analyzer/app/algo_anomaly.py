@@ -58,8 +58,8 @@ async def check_topic_shift() -> None:
     if await _cooldown_active(_TOPIC_COOLDOWN_KEY):
         return
 
-    current = await DAO.issue_entity_counts_24h()
-    baseline = await DAO.issue_entity_counts_7d()
+    current = await DAO.issue_category_counts_24h()
+    baseline = await DAO.issue_category_counts_7d()
 
     if not current or not baseline:
         return
