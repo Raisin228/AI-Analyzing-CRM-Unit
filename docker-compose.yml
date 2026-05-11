@@ -62,7 +62,7 @@ services:
     volumes:
       - ollama_data:/root/.ollama
     entrypoint: [ "/bin/sh", "-c" ]
-    command: [ "ollama serve & sleep 10 && ollama pull ${LLM} && wait" ] # стащили сразу же llama
+    command: [ "ollama serve & sleep 10 && ollama pull ${LLM} && wait" ] # стащили сразу же LLM
     healthcheck:
       test: [ "CMD-SHELL", "curl -f http://localhost:11434/api/tags || exit 1" ]
       interval: 15s
