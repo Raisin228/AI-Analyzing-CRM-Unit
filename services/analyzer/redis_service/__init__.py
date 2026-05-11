@@ -10,30 +10,37 @@ logger = logging.getLogger(__name__)
 class RedisManager:
     """Класс для управления Redis."""
 
-    def __init__(self, url: str):
-        """Инициализатор."""
+    _instance: "RedisManager | None" = None
 
-        self.url = url
-        self._client: Redis | None = None
+    def __new__(cls, url: str) -> "RedisManager":
+        """Конструктор."""
 
-    async def connect(self) -> None:
+        if cls._instance is None:
+            cls._instance = super().__new__(cls)
+            cls._instance.url = url
+            cls._instance.client = None
+        return cls._instance
+
+    @classmethod
+    def get(cls) -> "RedisManager":
+        """Получить объект синглтона."""
+
+        if cls._instance is None:
+            raise RuntimeError("RedisManager is not initialized")
+        return cls._instance
+
+    @classmethod
+    async def connect(cls) -> None:
         """Подключение."""
 
-        self._client = Redis.from_url(self.url, decode_responses=False)
+        cls._instance.client = Redis.from_url(cls._instance.url, decode_responses=False)
         logger.info("Redis connected")
 
-    async def disconnect(self) -> None:
+    @classmethod
+    async def disconnect(cls) -> None:
         """Отключение."""
 
-        if self._client:
-            await self._client.close()
-            self._client = None
-
-    @property
-    def client(self) -> Redis:
-        """Получить клиента."""
-
-        if self._client is None:
-            raise RuntimeError("Redis is not connected")
-
-        return self._client
+        if cls._instance.client:
+            await cls._instance.client.close()
+            cls._instance.client = None
+            cls._instance = None

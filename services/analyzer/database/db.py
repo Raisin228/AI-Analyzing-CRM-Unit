@@ -18,7 +18,7 @@ class DBManager:
         if cls._instance is None:
             cls._instance = super().__new__(cls)
             cls._instance.dsn = dsn
-            cls._instance._pool = None
+            cls._instance.pool = None
         return cls._instance
 
     @classmethod
@@ -29,24 +29,18 @@ class DBManager:
             raise RuntimeError("DBManager is not initialized")
         return cls._instance
 
-    async def init_pool(self) -> None:
+    @classmethod
+    async def init_pool(cls) -> None:
         """Создание пула подключений."""
 
-        self._pool = await asyncpg.create_pool(self.dsn, min_size=2, max_size=10)
+        cls._instance.pool = await asyncpg.create_pool(cls._instance.dsn, min_size=2, max_size=10)
         logger.info("DB pool initialized")
 
-    async def close_pool(self) -> None:
+    @classmethod
+    async def close_pool(cls) -> None:
         """Закрытие пула подключений."""
 
-        if self._pool:
-            await self._pool.close()
-            self._pool = None
-            DBManager._instance = None
-
-    @property
-    def pool(self) -> asyncpg.Pool:
-        """Пул подключений для исполнения запросов."""
-
-        if self._pool is None:
-            raise RuntimeError("DB pool is not initialized")
-        return self._pool
+        if cls._instance.pool:
+            await cls._instance.pool.close()
+            cls._instance.pool = None
+            cls._instance = None

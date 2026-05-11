@@ -11,9 +11,9 @@ from fastapi import FastAPI
 from .config import settings
 from . import embeddings, poller, algo_anomaly, algo_recurrence
 from .llm_pipeline import consume_loop, init_llm
-from ..database.db import DBManager
+from ..database import DBManager
 
-from ..redis_service import (RedisManager)
+from ..redis_service import RedisManager
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s")
 logger = logging.getLogger(__name__)
@@ -81,7 +81,7 @@ async def lifespan(_app: FastAPI):
         pass
     scheduler.shutdown(wait=False)
     await poller.close_producer()
-    await _app.state.redis.disconnect()
+    await redis.disconnect()
     await db.close_pool()
     logger.info("Analyzer shut down")
 

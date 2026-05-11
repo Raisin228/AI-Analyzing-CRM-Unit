@@ -1,4 +1,4 @@
-"""SQL-запросы к PostgreSQL."""
+"""SQL-запросы к PostgreSQL. Атрошенко Б. С."""
 
 import json
 import logging

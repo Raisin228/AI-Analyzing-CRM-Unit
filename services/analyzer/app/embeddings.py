@@ -7,8 +7,8 @@ import faiss
 import numpy as np
 from sentence_transformers import SentenceTransformer
 
-from database.queries import dao
-import redis_service
+from ..database.queries import dao
+from ..redis_service import RedisManager
 
 logger = logging.getLogger(__name__)
 
@@ -31,10 +31,9 @@ def _get_model() -> SentenceTransformer:
 
 async def get_embedding(text: str) -> np.ndarray:
     key = f"emb:{hashlib.sha256(text.encode()).hexdigest()}"
-    redis = redis_service.client()
 
-    if redis:
-        cached = await redis.get(key)
+    if RedisManager.get().client:
+        cached = await RedisManager.get().client.get(key)
         if cached:
             return np.frombuffer(base64.b64decode(cached), dtype=np.float32)
 
@@ -44,8 +43,8 @@ async def get_embedding(text: str) -> np.ndarray:
         convert_to_numpy=True,
     ).astype(np.float32)
 
-    if redis:
-        await redis.setex(key, CACHE_TTL, base64.b64encode(vec.tobytes()))
+    if RedisManager.get().client:
+        await RedisManager.get().client.setex(key, CACHE_TTL, base64.b64encode(vec.tobytes()))
 
     return vec
 
@@ -62,7 +61,7 @@ def search_similar(vector: np.ndarray, k: int = 5) -> list[tuple[int, float]]:
 
     results = []
     for dist, idx in zip(distances[0], indices[0]):
-        if idx >= 0 and idx < len(_id_map):
+        if 0 <= idx < len(_id_map):
             results.append((_id_map[idx], float(dist)))
     return results
 
