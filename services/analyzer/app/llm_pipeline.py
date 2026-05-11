@@ -247,24 +247,3 @@ async def process_review(review_data: dict) -> None:
             )
             break
 
-
-# ── Kafka consumer loop ───────────────────────────────────────────────────────
-
-async def consume_loop() -> None:
-    consumer = AIOKafkaConsumer(
-        settings.KAFKA_TOPIC,
-        bootstrap_servers=settings.KAFKA_BOOTSTRAP,
-        group_id="analyzer",
-        auto_offset_reset="earliest",
-    )
-    await consumer.start()
-    logger.info("Kafka consumer started, topic=%s", settings.KAFKA_TOPIC)
-    try:
-        async for msg in consumer:
-            try:
-                data = json.loads(msg.value)
-                await process_review(data)
-            except Exception as exc:
-                logger.error("Error processing review offset=%d: %s", msg.offset, exc)
-    finally:
-        await consumer.stop()

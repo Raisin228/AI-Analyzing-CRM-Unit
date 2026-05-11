@@ -10,9 +10,9 @@ from fastapi import FastAPI
 
 from .config import settings
 from . import algo_anomaly, algo_recurrence
-from .llm_pipeline import consume_loop, init_llm
+from .llm_pipeline import init_llm
 from ..database import DBManager
-from ..kafka import KafkaManager
+from ..kafka import KafkaManager, Consumer
 
 from ..redis_service import RedisManager
 
@@ -68,7 +68,7 @@ async def lifespan(_app: FastAPI):
     logger.info("Scheduler started")
 
     # 7. Kafka consumer (background task)
-    consumer_task = asyncio.create_task(consume_loop())
+    consumer_task = asyncio.create_task(Consumer.loop_consume())
 
     yield
 
