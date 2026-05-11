@@ -3,7 +3,9 @@
 import logging
 from datetime import datetime, timezone
 
-from fastapi import APIRouter, Query
+from uuid import UUID
+
+from fastapi import APIRouter, HTTPException, Query
 
 from .. import state
 from ..models import Product, IncomingEvent, EventAcceptanceStatus, OrgUnit, UnitHealth, Review
@@ -34,6 +36,16 @@ async def get_products() -> list[Product]:
     """Список товаров, имеющихся в CRM."""
 
     return products
+
+
+@router.get("/reviews/{review_id}", response_model=Review)
+async def get_review(review_id: UUID) -> Review:
+    """Получить отзыв по его UUID."""
+
+    for review in reviews:
+        if review.id == review_id:
+            return review
+    raise HTTPException(status_code=404, detail=f"Review {review_id} not found")
 
 
 @router.get("/reviews", response_model=list[Review])

@@ -1,4 +1,4 @@
-# ── Stage 1: builder ──────────────────────────────────────────────────────────
+# ─ Stage 1: builder ─
 # gcc/g++ нужны для компиляции asyncpg и других C-расширений.
 # В финальный образ они не попадут.
 FROM python:3.11-slim AS builder
@@ -16,7 +16,7 @@ RUN pip install --no-cache-dir torch --extra-index-url https://download.pytorch.
 
 RUN pip install --no-cache-dir -r requirements.txt
 
-# ── Stage 2: runtime ──────────────────────────────────────────────────────────
+# ─ Stage 2: runtime ─
 FROM python:3.11-slim
 
 WORKDIR /app

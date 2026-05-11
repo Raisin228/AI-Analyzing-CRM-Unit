@@ -9,8 +9,9 @@ from fastapi import FastAPI
 from .config import settings
 from . import embeddings, poller, algo_anomaly, algo_recurrence
 from .llm_pipeline import consume_loop, init_llm
-from database.db import init_db, close_db
-import redis_service
+
+from ..database.db import init_db
+from ..redis_service import RedisManager
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s")
 logger = logging.getLogger(__name__)
@@ -39,8 +40,12 @@ async def lifespan(_app: FastAPI):
     loop = asyncio.get_running_loop()
     await loop.run_in_executor(None, _run_migrations)
 
-    # 3. Redis + embeddings
-    await redis_service.connect(settings.REDIS_URL)
+    # 3. Redis
+    redis = RedisManager(settings.redis_url)
+    await redis.connect()
+    _app.state.redis = redis
+
+    # 3.1 Настройка embeddings
     await embeddings.rebuild_index()
 
     # 4. Kafka producer

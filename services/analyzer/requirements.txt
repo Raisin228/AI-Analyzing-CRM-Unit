@@ -1,3 +1,5 @@
+# Зависимости Анализатора. Атрошенко Б. С.
+
 # torch устанавливается первым — CPU-only (~700 MB вместо ~2.5 GB с CUDA)
 # sentence-transformers найдёт его уже установленным и не скачает CUDA-версию
 --extra-index-url https://download.pytorch.org/whl/cpu
