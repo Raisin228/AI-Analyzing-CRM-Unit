@@ -10,4 +10,7 @@ services:
   analyzer:
     volumes:
       - ./services/analyzer/app:/app/app
+      - ./services/analyzer/database:/app/database
+      - ./services/analyzer/redis_service:/app/redis_service
+      - ./services/analyzer/Embeddings:/app/Embeddings
     command: uvicorn app.main:app --host 0.0.0.0 --port 8001 --reload

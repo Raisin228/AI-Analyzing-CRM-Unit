@@ -8,21 +8,17 @@ from fastapi import FastAPI
 
 from .config import settings
 from . import embeddings, poller, algo_anomaly, algo_recurrence
-from analyzer.database import DBManager
 from .llm_pipeline import consume_loop, init_llm
-from ..redis_service import redis_manager
+from database.db import init_db, close_db
+import redis_service
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s")
 logger = logging.getLogger(__name__)
 
 scheduler = AsyncIOScheduler()
 
-database = DBManager(settings.database_url)
-
 
 def _run_migrations() -> None:
-    """Прогон миграций в отдельном подпроцессе."""
-
     result = subprocess.run(
         ["alembic", "upgrade", "head"],
         capture_output=True, text=True,
@@ -36,17 +32,15 @@ def _run_migrations() -> None:
 
 @asynccontextmanager
 async def lifespan(_app: FastAPI):
-    """Код исполняемый до/после запуска приложения"""
-
     # 1. DB pool
-    await database.init_pool(settings.database_url)
+    await init_db(settings.database_url)
 
-    # 2. Alembic migrations (runs in thread pool to avoid event-loop conflict)
-    loop = asyncio.get_event_loop()
+    # 2. Alembic migrations
+    loop = asyncio.get_running_loop()
     await loop.run_in_executor(None, _run_migrations)
 
     # 3. Redis + embeddings
-    await redis_manager.connect(settings.REDIS_URL)
+    await redis_service.connect(settings.REDIS_URL)
     await embeddings.rebuild_index()
 
     # 4. Kafka producer
@@ -76,8 +70,8 @@ async def lifespan(_app: FastAPI):
         pass
     scheduler.shutdown(wait=False)
     await poller.close_producer()
-    await database.close_pool()
-    await embeddings.close_redis()
+    await redis_service.disconnect()
+    await close_db()
     logger.info("Analyzer shut down")
 
 
