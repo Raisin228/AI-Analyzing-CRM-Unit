@@ -4,8 +4,8 @@ import numpy as np
 
 from .config import settings
 from . import dispatcher
-import redis_service
-from database.queries import dao
+from ..redis_service import RedisManager
+from ..database import DAO
 
 logger = logging.getLogger(__name__)
 
@@ -15,24 +15,22 @@ _COOLDOWN_SEC = 4 * 3600
 
 
 async def _cooldown_active(key: str) -> bool:
-    redis = redis_service.client()
-    if redis is None:
+    if RedisManager.get().client is None:
         return False
-    return bool(await redis.get(key))
+    return bool(await RedisManager.get().client.get(key))
 
 
 async def _set_cooldown(key: str) -> None:
-    redis = redis_service.client()
-    if redis:
-        await redis.setex(key, _COOLDOWN_SEC, "1")
+    if RedisManager.get().client:
+        await RedisManager.get().client.setex(key, _COOLDOWN_SEC, "1")
 
 
 async def check_volume_anomaly() -> None:
     if await _cooldown_active(_VOLUME_COOLDOWN_KEY):
         return
 
-    current = await dao.count_negative_last_24h()
-    baseline = await dao.count_negative_by_day_7d()
+    current = await DAO.count_negative_last_24h()
+    baseline = await DAO.count_negative_by_day_7d()
 
     if len(baseline) < 2:
         return
@@ -60,8 +58,8 @@ async def check_topic_shift() -> None:
     if await _cooldown_active(_TOPIC_COOLDOWN_KEY):
         return
 
-    current = await dao.issue_entity_counts_24h()
-    baseline = await dao.issue_entity_counts_7d()
+    current = await DAO.issue_entity_counts_24h()
+    baseline = await DAO.issue_entity_counts_7d()
 
     if not current or not baseline:
         return

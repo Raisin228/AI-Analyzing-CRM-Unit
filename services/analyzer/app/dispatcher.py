@@ -6,21 +6,21 @@ import httpx
 from tenacity import retry, stop_after_attempt, wait_fixed
 
 from .config import settings
-from database.queries import dao
+from ..database import DAO
 
 logger = logging.getLogger(__name__)
 
 
 async def send_event(
-    event_type: str,
-    review_id: Optional[str],
-    description: str,
-    metadata: Optional[dict[str, Any]] = None,
+        event_type: str,
+        review_id: Optional[str],
+        description: str,
+        metadata: Optional[dict[str, Any]] = None,
 ) -> None:
     event_id = uuid.uuid4()
     metadata = metadata or {}
 
-    if await dao.event_already_sent(event_id):
+    if await DAO.event_already_sent(event_id):
         return
 
     payload = {
@@ -36,7 +36,7 @@ async def send_event(
         logger.error("Failed to dispatch event %s after retries: %s", event_type, exc)
         return
 
-    await dao.insert_dispatched_event(
+    await DAO.insert_dispatched_event(
         event_id=event_id,
         event_type=event_type,
         review_id=review_id,

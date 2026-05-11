@@ -12,7 +12,7 @@ from tenacity import retry, stop_after_attempt, wait_fixed
 
 from .config import settings
 from . import dispatcher, algo_recurrence
-from database.queries import dao
+from ..database import DAO
 
 logger = logging.getLogger(__name__)
 
@@ -135,7 +135,7 @@ async def save_results(state: ReviewState) -> dict:
     except Exception:
         created_at = now
 
-    review_db_id = await dao.insert_review(
+    review_db_id = await DAO.insert_review(
         external_id=state["external_id"],
         customer_name=state["customer_name"],
         text=state["text"],
@@ -157,7 +157,7 @@ async def save_results(state: ReviewState) -> dict:
             from . import embeddings
             vec = await embeddings.get_embedding(entity)
             emb_bytes = vec.tobytes()
-        eid = await dao.insert_entity(review_db_id, entity, is_issue, emb_bytes)
+        eid = await DAO.insert_entity(review_db_id, entity, is_issue, emb_bytes)
         if is_issue:
             entity_ids[entity] = eid
 

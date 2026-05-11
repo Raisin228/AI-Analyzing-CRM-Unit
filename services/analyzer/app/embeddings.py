@@ -7,7 +7,7 @@ import faiss
 import numpy as np
 from sentence_transformers import SentenceTransformer
 
-from ..database.queries import dao
+from ..database import DAO
 from ..redis_service import RedisManager
 
 logger = logging.getLogger(__name__)
@@ -81,7 +81,7 @@ async def rebuild_index() -> None:
     _index = faiss.IndexFlatIP(EMBEDDING_DIM)
     _id_map = []
 
-    rows = await dao.get_all_issue_embeddings()
+    rows = await DAO.get_all_issue_embeddings()
     for entity_id, emb_bytes in rows:
         vec = np.frombuffer(emb_bytes, dtype=np.float32).reshape(1, -1)
         _index.add(vec)

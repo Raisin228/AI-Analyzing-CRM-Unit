@@ -28,10 +28,9 @@ async def close_producer() -> None:
 
 
 async def poll_crm() -> None:
-    redis = redis_service.client()
     cursor: Optional[str] = None
-    if redis:
-        raw = await redis.get(_CURSOR_KEY)
+    if RedisManager.get().client:
+        raw = await RedisManager.get().client.get(_CURSOR_KEY)
         if raw:
             cursor = raw.decode()
 
@@ -58,5 +57,5 @@ async def poll_crm() -> None:
         await _producer.send_and_wait(settings.KAFKA_TOPIC, value=value)
 
     max_created = max(r["created_at"] for r in reviews)
-    if redis:
-        await redis.set(_CURSOR_KEY, max_created)
+    if RedisManager.get().client:
+        await RedisManager.get().client.set(_CURSOR_KEY, max_created)
