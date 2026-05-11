@@ -44,11 +44,11 @@ def init_llm() -> None:
 # ── state ─────────────────────────────────────────────────────────────────────
 
 class ReviewState(TypedDict):
-    external_id: int
+    external_id: str       # CRM UUID
     text: str
     rating: int
     customer_name: str
-    product_id: int
+    product_id: str        # CRM UUID
     created_at: str
     entities: list[str]
     issues: list[str]
@@ -193,12 +193,14 @@ def get_graph():
 # ── main entry ────────────────────────────────────────────────────────────────
 
 async def process_review(review_data: dict) -> None:
+    crm_review_uuid = str(review_data["id"])
+
     state: ReviewState = {
-        "external_id": review_data["id"],
+        "external_id": crm_review_uuid,
         "text": review_data["text"],
         "rating": review_data["rating"],
         "customer_name": review_data.get("customer_name", ""),
-        "product_id": review_data.get("product_id", 0),
+        "product_id": str(review_data.get("product_id", "")),
         "created_at": str(review_data.get("created_at", "")),
         "entities": [],
         "issues": [],
@@ -219,7 +221,7 @@ async def process_review(review_data: dict) -> None:
     if result["mismatch"]:
         await dispatcher.send_event(
             "sentiment_mismatch",
-            review_db_id,
+            crm_review_uuid,
             f"Рейтинг {result['rating']} не совпадает с тональностью «{result['sentiment']}»",
         )
 
@@ -227,7 +229,7 @@ async def process_review(review_data: dict) -> None:
     if result["sentiment"] == "negative" and result["confidence"] >= 0.9:
         await dispatcher.send_event(
             "critical_negative",
-            review_db_id,
+            crm_review_uuid,
             f"Критически негативный отзыв (уверенность {result['confidence']:.0%})",
             metadata={"confidence": result["confidence"]},
         )
@@ -239,7 +241,7 @@ async def process_review(review_data: dict) -> None:
         if is_recurring:
             await dispatcher.send_event(
                 "recurring_issue",
-                review_db_id,
+                crm_review_uuid,
                 f"Рецидив проблемы: «{issue_text}»",
                 metadata={"issue": issue_text},
             )

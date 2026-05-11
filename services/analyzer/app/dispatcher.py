@@ -13,7 +13,7 @@ logger = logging.getLogger(__name__)
 
 async def send_event(
     event_type: str,
-    review_id: Optional[int],
+    review_id: Optional[str],
     description: str,
     metadata: Optional[dict[str, Any]] = None,
 ) -> None:
@@ -25,7 +25,7 @@ async def send_event(
 
     payload = {
         "event_type": event_type,
-        "review_id": review_id or 0,
+        "review_id": review_id,
         "description": description,
         "metadata": metadata,
     }

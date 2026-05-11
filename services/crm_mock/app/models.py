@@ -2,7 +2,7 @@
 
 from datetime import datetime
 from enum import Enum
-from typing import Literal
+from typing import Literal, Optional
 from uuid import UUID
 
 from pydantic import BaseModel
@@ -50,7 +50,7 @@ class IncomingEvent(BaseModel):
     """События, которые возможно принять в CRM."""
 
     event_type: EventType
-    review_id: UUID
+    review_id: Optional[UUID] = None
     description: str
 
 

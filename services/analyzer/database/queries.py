@@ -214,7 +214,7 @@ class DAO:
             self,
             event_id: UUID,
             event_type: str,
-            review_id: Optional[int],
+            review_id: Optional[str],
             description: str,
             metadata: dict,
     ) -> None:

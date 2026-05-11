@@ -17,12 +17,12 @@ def upgrade() -> None:
     op.execute("""
         CREATE TABLE IF NOT EXISTS reviews (
             id              SERIAL PRIMARY KEY,
-            external_id     INT UNIQUE NOT NULL,
+            external_id     TEXT UNIQUE NOT NULL,
             customer_name   TEXT,
             text            TEXT NOT NULL,
             rating          SMALLINT,
             created_at      TIMESTAMPTZ NOT NULL,
-            product_id      INT,
+            product_id      TEXT,
             sentiment       TEXT,
             rating_mismatch BOOLEAN DEFAULT FALSE,
             processed_at    TIMESTAMPTZ
@@ -62,7 +62,7 @@ def upgrade() -> None:
             id          SERIAL PRIMARY KEY,
             event_id    UUID UNIQUE NOT NULL,
             event_type  TEXT NOT NULL,
-            review_id   INT REFERENCES reviews(id),
+            review_id   TEXT,
             description TEXT,
             metadata    JSONB DEFAULT '{}',
             sent_at     TIMESTAMPTZ DEFAULT now()
