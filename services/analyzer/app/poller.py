@@ -6,7 +6,7 @@ import httpx
 from aiokafka import AIOKafkaProducer
 
 from .config import settings
-import redis_service
+from ..redis_service import RedisManager
 
 logger = logging.getLogger(__name__)
 

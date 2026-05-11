@@ -29,10 +29,11 @@ COPY --from=builder /usr/local/bin /usr/local/bin
 COPY services/analyzer/alembic.ini ./
 COPY services/analyzer/alembic/ ./alembic/
 
-# Service packages
-COPY services/analyzer/app/ ./app/
-COPY services/analyzer/database/ ./database/
-COPY services/analyzer/redis_service/ ./redis_service/
-COPY services/analyzer/Embeddings/ ./Embeddings/
+# Кладём пакеты в analyzer/, чтобы from ..database / ..redis_service работали
+COPY services/analyzer/__init__.py ./analyzer/__init__.py
+COPY services/analyzer/app/ ./analyzer/app/
+COPY services/analyzer/database/ ./analyzer/database/
+COPY services/analyzer/redis_service/ ./analyzer/redis_service/
+COPY services/analyzer/Embeddings/ ./analyzer/Embeddings/
 
-CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8001"]
+CMD ["uvicorn", "analyzer.app.main:app", "--host", "0.0.0.0", "--port", "8001"]

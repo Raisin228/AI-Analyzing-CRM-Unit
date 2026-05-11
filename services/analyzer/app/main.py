@@ -13,7 +13,7 @@ from . import embeddings, poller, algo_anomaly, algo_recurrence
 from .llm_pipeline import consume_loop, init_llm
 from ..database.db import DBManager
 
-from ..redis_service import RedisManager
+from ..redis_service import (RedisManager)
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s")
 logger = logging.getLogger(__name__)
@@ -41,7 +41,6 @@ async def lifespan(_app: FastAPI):
 
     # 1. DB pool
     db = DBManager(settings.database_url)
-    _app.state.db = db
     await db.init_pool()
 
     # 2. Alembic migrations
@@ -49,9 +48,8 @@ async def lifespan(_app: FastAPI):
     await loop.run_in_executor(None, _run_migrations)
 
     # 3. Redis
-    redis = RedisManager(settings.redis_url)
+    redis = RedisManager(settings.REDIS_URL)
     await redis.connect()
-    _app.state.redis = redis
 
     # 3.1 Настройка embeddings
     await embeddings.rebuild_index()
@@ -84,7 +82,7 @@ async def lifespan(_app: FastAPI):
     scheduler.shutdown(wait=False)
     await poller.close_producer()
     await _app.state.redis.disconnect()
-    await _app.state.db.close_pool()
+    await db.close_pool()
     logger.info("Analyzer shut down")
 
 

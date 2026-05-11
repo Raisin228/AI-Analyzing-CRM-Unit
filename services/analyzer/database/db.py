@@ -8,30 +8,44 @@ logger = logging.getLogger(__name__)
 
 
 class DBManager:
-    """Менеджер для работы с БД."""
+    """Менеджер для работы с БД. Singleton."""
 
-    def __init__(self, dsn: str):
-        """Инициализатор."""
+    _instance: "DBManager | None" = None
 
-        self.dsn = dsn
-        self._pool: asyncpg.Pool | None = None
+    def __new__(cls, dsn: str) -> "DBManager":
+        """Конструктор."""
+
+        if cls._instance is None:
+            cls._instance = super().__new__(cls)
+            cls._instance.dsn = dsn
+            cls._instance._pool = None
+        return cls._instance
+
+    @classmethod
+    def get(cls) -> "DBManager":
+        """Получить объект синглтона."""
+
+        if cls._instance is None:
+            raise RuntimeError("DBManager is not initialized")
+        return cls._instance
 
     async def init_pool(self) -> None:
-        """Создание пула подключений"""
+        """Создание пула подключений."""
 
         self._pool = await asyncpg.create_pool(self.dsn, min_size=2, max_size=10)
         logger.info("DB pool initialized")
 
     async def close_pool(self) -> None:
-        """Закрытие Connetion."""
+        """Закрытие пула подключений."""
 
         if self._pool:
             await self._pool.close()
             self._pool = None
+            DBManager._instance = None
 
     @property
     def pool(self) -> asyncpg.Pool:
-        """Получить пул подключение."""
+        """Пул подключений для исполнения запросов."""
 
         if self._pool is None:
             raise RuntimeError("DB pool is not initialized")

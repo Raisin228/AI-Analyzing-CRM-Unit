@@ -5,7 +5,7 @@ import logging
 from typing import Optional
 from uuid import UUID
 
-from .db import pool
+from .db import DBManager
 
 logger = logging.getLogger(__name__)
 
@@ -25,7 +25,7 @@ class DAO:
             rating_mismatch: bool,
             processed_at,
     ) -> Optional[int]:
-        async with pool().acquire() as conn:
+        async with DBManager.get().pool.acquire() as conn:
             row = await conn.fetchrow(
                 """
                 INSERT INTO reviews
@@ -49,7 +49,7 @@ class DAO:
             is_issue: bool,
             embedding_bytes: Optional[bytes] = None,
     ) -> int:
-        async with pool().acquire() as conn:
+        async with DBManager.get().pool.acquire() as conn:
             row = await conn.fetchrow(
                 """
                 INSERT INTO review_entities (review_id, entity, is_issue, embedding)
@@ -61,14 +61,14 @@ class DAO:
             return row["id"]
 
     async def update_entity_cluster(self, entity_id: int, cluster_id: int) -> None:
-        async with pool().acquire() as conn:
+        async with DBManager.get().pool.acquire() as conn:
             await conn.execute(
                 "UPDATE review_entities SET cluster_id = $1 WHERE id = $2",
                 cluster_id, entity_id,
             )
 
     async def get_entity_cluster(self, entity_id: int) -> Optional[int]:
-        async with pool().acquire() as conn:
+        async with DBManager.get().pool.acquire() as conn:
             row = await conn.fetchrow(
                 "SELECT cluster_id FROM review_entities WHERE id = $1",
                 entity_id,
@@ -76,7 +76,7 @@ class DAO:
             return row["cluster_id"] if row else None
 
     async def get_all_issue_embeddings(self) -> list[tuple[int, bytes]]:
-        async with pool().acquire() as conn:
+        async with DBManager.get().pool.acquire() as conn:
             rows = await conn.fetch(
                 "SELECT id, embedding FROM review_entities WHERE is_issue = TRUE AND embedding IS NOT NULL"
             )
@@ -85,7 +85,7 @@ class DAO:
     # ── issue_clusters ────────────────────────────────────────────────────────
 
     async def insert_cluster(self, label: str) -> int:
-        async with pool().acquire() as conn:
+        async with DBManager.get().pool.acquire() as conn:
             row = await conn.fetchrow(
                 "INSERT INTO issue_clusters (label) VALUES ($1) RETURNING id",
                 label,
@@ -93,7 +93,7 @@ class DAO:
             return row["id"]
 
     async def get_cluster_status(self, cluster_id: int) -> Optional[str]:
-        async with pool().acquire() as conn:
+        async with DBManager.get().pool.acquire() as conn:
             row = await conn.fetchrow(
                 "SELECT status FROM issue_clusters WHERE id = $1",
                 cluster_id,
@@ -101,14 +101,14 @@ class DAO:
             return row["status"] if row else None
 
     async def touch_cluster(self, cluster_id: int) -> None:
-        async with pool().acquire() as conn:
+        async with DBManager.get().pool.acquire() as conn:
             await conn.execute(
                 "UPDATE issue_clusters SET updated_at = now() WHERE id = $1",
                 cluster_id,
             )
 
     async def get_stale_open_clusters(self) -> list[int]:
-        async with pool().acquire() as conn:
+        async with DBManager.get().pool.acquire() as conn:
             rows = await conn.fetch(
                 """
                 SELECT id
@@ -120,7 +120,7 @@ class DAO:
             return [r["id"] for r in rows]
 
     async def get_last_cluster_sentiments(self, cluster_id: int, n: int = 5) -> list[str]:
-        async with pool().acquire() as conn:
+        async with DBManager.get().pool.acquire() as conn:
             rows = await conn.fetch(
                 """
                 SELECT r.sentiment
@@ -136,7 +136,7 @@ class DAO:
             return [r["sentiment"] for r in rows]
 
     async def close_cluster(self, cluster_id: int) -> None:
-        async with pool().acquire() as conn:
+        async with DBManager.get().pool.acquire() as conn:
             await conn.execute(
                 "UPDATE issue_clusters SET status = 'closed', updated_at = now() WHERE id = $1",
                 cluster_id,
@@ -145,7 +145,7 @@ class DAO:
     # ── anomaly queries ───────────────────────────────────────────────────────
 
     async def count_negative_last_24h(self) -> int:
-        async with pool().acquire() as conn:
+        async with DBManager.get().pool.acquire() as conn:
             return await conn.fetchval(
                 """
                 SELECT COUNT(*)
@@ -157,7 +157,7 @@ class DAO:
 
     async def count_negative_by_day_7d(self) -> list[int]:
         """Returns daily negative counts for the 7 days preceding the last 24h."""
-        async with pool().acquire() as conn:
+        async with DBManager.get().pool.acquire() as conn:
             rows = await conn.fetch(
                 """
                 SELECT COUNT(*) AS cnt
@@ -172,7 +172,7 @@ class DAO:
             return [r["cnt"] for r in rows]
 
     async def issue_entity_counts_24h(self) -> dict[str, int]:
-        async with pool().acquire() as conn:
+        async with DBManager.get().pool.acquire() as conn:
             rows = await conn.fetch(
                 """
                 SELECT re.entity, COUNT(*) AS cnt
@@ -186,7 +186,7 @@ class DAO:
             return {r["entity"]: r["cnt"] for r in rows}
 
     async def issue_entity_counts_7d(self) -> dict[str, int]:
-        async with pool().acquire() as conn:
+        async with DBManager.get().pool.acquire() as conn:
             rows = await conn.fetch(
                 """
                 SELECT re.entity, COUNT(*) AS cnt
@@ -203,7 +203,7 @@ class DAO:
     # ── dispatched_events ─────────────────────────────────────────────────────
 
     async def event_already_sent(self, event_id: UUID) -> bool:
-        async with pool().acquire() as conn:
+        async with DBManager.get().pool.acquire() as conn:
             row = await conn.fetchrow(
                 "SELECT id FROM dispatched_events WHERE event_id = $1",
                 event_id,
@@ -218,7 +218,7 @@ class DAO:
             description: str,
             metadata: dict,
     ) -> None:
-        async with pool().acquire() as conn:
+        async with DBManager.get().pool.acquire() as conn:
             await conn.execute(
                 """
                 INSERT INTO dispatched_events (event_id, event_type, review_id, description, metadata)
