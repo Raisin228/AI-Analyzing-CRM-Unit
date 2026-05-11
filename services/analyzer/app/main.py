@@ -1,3 +1,5 @@
+"""Старт модуля анализатора. Атрошенко Б. С."""
+
 import asyncio
 import logging
 import subprocess
@@ -9,8 +11,8 @@ from fastapi import FastAPI
 from .config import settings
 from . import embeddings, poller, algo_anomaly, algo_recurrence
 from .llm_pipeline import consume_loop, init_llm
+from ..database.db import DBManager
 
-from ..database.db import init_db
 from ..redis_service import RedisManager
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s")
@@ -20,6 +22,8 @@ scheduler = AsyncIOScheduler()
 
 
 def _run_migrations() -> None:
+    """Запуск и прогон миграций."""
+
     result = subprocess.run(
         ["alembic", "upgrade", "head"],
         capture_output=True, text=True,
@@ -33,8 +37,12 @@ def _run_migrations() -> None:
 
 @asynccontextmanager
 async def lifespan(_app: FastAPI):
+    """Код исполняемый до/после запуска приложения"""
+
     # 1. DB pool
-    await init_db(settings.database_url)
+    db = DBManager(settings.database_url)
+    _app.state.db = db
+    await db.init_pool()
 
     # 2. Alembic migrations
     loop = asyncio.get_running_loop()
@@ -75,8 +83,8 @@ async def lifespan(_app: FastAPI):
         pass
     scheduler.shutdown(wait=False)
     await poller.close_producer()
-    await redis_service.disconnect()
-    await close_db()
+    await _app.state.redis.disconnect()
+    await _app.state.db.close_pool()
     logger.info("Analyzer shut down")
 
 
@@ -85,6 +93,8 @@ app = FastAPI(title="Analyzer", version="1.0.0", lifespan=lifespan)
 
 @app.get("/health")
 async def health():
+    """Проверка состояния сервиса и кол-ва векторов."""
+
     return {
         "status": "ok",
         "faiss_vectors": embeddings._index.ntotal if embeddings._index else 0,
