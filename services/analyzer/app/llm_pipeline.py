@@ -4,14 +4,14 @@ import re
 from datetime import datetime, timezone
 from typing import Optional, TypedDict
 
-from aiokafka import AIOKafkaConsumer
 from langchain_ollama import ChatOllama
 from langchain_core.messages import HumanMessage
 from langgraph.graph import END, StateGraph
 from tenacity import retry, stop_after_attempt, wait_fixed
 
 from .config import settings
-from . import dispatcher, algo_recurrence
+from . import algo_recurrence
+from ..dispatch import Notifier
 from ..database import DAO
 
 logger = logging.getLogger(__name__)
@@ -57,7 +57,7 @@ class ReviewState(TypedDict):
     customer_name: str
     product_id: str
     created_at: str
-    categories: list[CategoryItem]   # [{"name": "courier", "is_issue": True}, ...]
+    categories: list[CategoryItem]  # [{"name": "courier", "is_issue": True}, ...]
     sentiment: str
     confidence: float
     mismatch: bool
@@ -222,14 +222,14 @@ async def process_review(review_data: dict) -> None:
         return
 
     if result["mismatch"]:
-        await dispatcher.send_event(
+        await Notifier.send_event(
             "sentiment_mismatch",
             crm_review_uuid,
             f"Рейтинг {result['rating']} не совпадает с тональностью «{result['sentiment']}»",
         )
 
     if result["sentiment"] == "negative" and result["confidence"] >= 0.9:
-        await dispatcher.send_event(
+        await Notifier.send_event(
             "critical_negative",
             crm_review_uuid,
             f"Критически негативный отзыв (уверенность {result['confidence']:.0%})",
@@ -239,11 +239,10 @@ async def process_review(review_data: dict) -> None:
     for category, entity_id in result.get("issue_entity_ids", {}).items():
         is_recurring = await algo_recurrence.check_and_handle(category, entity_id)
         if is_recurring:
-            await dispatcher.send_event(
+            await Notifier.send_event(
                 "recurring_issue",
                 crm_review_uuid,
                 f"Рецидив проблемы в категории «{category}»",
                 metadata={"category": category},
             )
             break
-

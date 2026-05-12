@@ -3,7 +3,7 @@ import logging
 import numpy as np
 
 from analyzer.app.config import settings
-from analyzer.app import dispatcher
+from ..dispatch import Notifier
 from analyzer.redis_service import RedisManager
 from analyzer.database import DAO
 
@@ -51,7 +51,7 @@ class AnomalyDetector:
             deltas = p_cur - p_bas
             shifted_topic = topics_list[int(np.argmax(deltas))]
 
-            await dispatcher.send_event(
+            await Notifier.send_event(
                 event_type="topic_shift",
                 review_id=None,
                 description=f"Смещение тематики жалоб (KL={kl:.3f}): рост по теме «{shifted_topic}»",
@@ -82,7 +82,7 @@ class AnomalyDetector:
         logger.debug("Volume anomaly check: current=%d mean=%.1f std=%.1f z=%.2f", current, mean, std, z_score)
 
         if z_score >= settings.ANOMALY_ZSCORE_THRESHOLD:
-            await dispatcher.send_event(
+            await Notifier.send_event(
                 event_type="volume_anomaly",
                 review_id=None,
                 description=f"Аномальный рост негативных отзывов: z-score={z_score:.2f}",

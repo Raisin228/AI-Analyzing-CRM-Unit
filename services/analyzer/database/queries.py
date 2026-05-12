@@ -215,15 +215,6 @@ class DAO:
     # ── dispatched_events ─────────────────────────────────────────────────────
 
     @classmethod
-    async def event_already_sent(cls, event_id: UUID) -> bool:
-        async with DBManager.get().pool.acquire() as conn:
-            row = await conn.fetchrow(
-                "SELECT id FROM dispatched_events WHERE event_id = $1",
-                event_id,
-            )
-            return row is not None
-
-    @classmethod
     async def insert_dispatched_event(
             cls,
             event_id: UUID,
