@@ -1,0 +1,6 @@
+Определи тональность отзыва клиента.
+
+Отзыв: $text
+Проблемные категории: $issues
+
+Ответ строго в JSON: {"sentiment": "positive" | "negative" | "neutral", "confidence": 0.0..1.0}

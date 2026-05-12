@@ -5,7 +5,7 @@ import logging
 from aiokafka import AIOKafkaConsumer
 
 from analyzer.app.config import settings
-from analyzer.app.llm_pipeline import process_review
+from ..agent import AIAnalyzerAgent
 
 logger = logging.getLogger(__name__)
 
@@ -29,7 +29,7 @@ class Consumer:
             async for msg in consumer:
                 try:
                     data = json.loads(msg.value)
-                    await process_review(data)
+                    await AIAnalyzerAgent.process_review(data)
                 except Exception as exc:
                     logger.error("Error processing review offset=%d: %s", msg.offset, exc)
         finally:

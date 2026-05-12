@@ -26,6 +26,8 @@ class DAO:
             rating_mismatch: bool,
             processed_at,
     ) -> Optional[int]:
+        """Вставить запись о новом отзыве в таблицу отзывов."""
+
         async with DBManager.get().pool.acquire() as conn:
             row = await conn.fetchrow(
                 """
@@ -45,6 +47,8 @@ class DAO:
 
     @classmethod
     async def insert_entity(cls, review_id: int, category: str, is_issue: bool) -> int:
+        """Записать сущности, которые были извлечены из отзыва."""
+
         async with DBManager.get().pool.acquire() as conn:
             row = await conn.fetchrow(
                 """
@@ -97,7 +101,8 @@ class DAO:
         async with DBManager.get().pool.acquire() as conn:
             rows = await conn.fetch(
                 """
-                SELECT id FROM issue_clusters
+                SELECT id
+                FROM issue_clusters
                 WHERE status = 'open'
                   AND created_at < now() - interval '3 days'
                 """
@@ -111,7 +116,7 @@ class DAO:
                 """
                 SELECT r.sentiment
                 FROM reviews r
-                    JOIN review_entities re ON re.review_id = r.id
+                         JOIN review_entities re ON re.review_id = r.id
                 WHERE re.cluster_id = $1
                   AND r.sentiment IS NOT NULL
                 ORDER BY r.created_at DESC
@@ -142,7 +147,8 @@ class DAO:
         async with DBManager.get().pool.acquire() as conn:
             return await conn.fetchval(
                 """
-                SELECT COUNT(*) FROM reviews
+                SELECT COUNT(*)
+                FROM reviews
                 WHERE sentiment = 'negative'
                   AND created_at >= now() - interval '24 hours'
                 """
@@ -159,7 +165,8 @@ class DAO:
         async with DBManager.get().pool.acquire() as conn:
             rows = await conn.fetch(
                 """
-                SELECT COUNT(*) AS cnt FROM reviews
+                SELECT COUNT(*) AS cnt
+                FROM reviews
                 WHERE sentiment = 'negative'
                   AND created_at >= now() - interval '8 days'
                   AND created_at < now() - interval '1 day'
@@ -182,7 +189,7 @@ class DAO:
                 """
                 SELECT re.category, COUNT(*) AS cnt
                 FROM review_entities re
-                    JOIN reviews r ON r.id = re.review_id
+                         JOIN reviews r ON r.id = re.review_id
                 WHERE re.is_issue = TRUE
                   AND r.created_at >= now() - interval '24 hours'
                 GROUP BY re.category
@@ -203,7 +210,7 @@ class DAO:
                 """
                 SELECT re.category, COUNT(*) AS cnt
                 FROM review_entities re
-                    JOIN reviews r ON r.id = re.review_id
+                         JOIN reviews r ON r.id = re.review_id
                 WHERE re.is_issue = TRUE
                   AND r.created_at >= now() - interval '8 days'
                   AND r.created_at < now() - interval '1 day'

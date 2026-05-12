@@ -27,6 +27,8 @@ COPY services/analyzer/alembic/ ./alembic/
 
 # Кладём пакеты в analyzer/, чтобы from ..database / ..redis_service работали
 COPY services/analyzer/__init__.py ./analyzer/__init__.py
+COPY services/analyzer/utils.py ./analyzer/utils.py
+COPY services/analyzer/prompts/ ./analyzer/prompts/
 COPY services/analyzer/app/ ./analyzer/app/
 COPY services/analyzer/database/ ./analyzer/database/
 COPY services/analyzer/kafka/ ./analyzer/kafka/

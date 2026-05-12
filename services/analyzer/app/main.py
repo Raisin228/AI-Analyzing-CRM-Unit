@@ -11,7 +11,7 @@ from fastapi import FastAPI
 from ..research import AnomalyDetector
 from .config import settings
 from . import algo_recurrence
-from .llm_pipeline import init_llm
+from ..agent import AIAnalyzerAgent
 from ..database import DBManager
 from ..kafka import KafkaManager, Consumer
 
@@ -58,7 +58,7 @@ async def lifespan(_app: FastAPI):
     await kafka.init_producer()
 
     # 5. LLM client + LangFuse
-    init_llm()
+    AIAnalyzerAgent()
 
     # 6. Scheduler
     scheduler.add_job(kafka.poll_crm, "interval", seconds=settings.POLL_INTERVAL_SEC, id="poller")
