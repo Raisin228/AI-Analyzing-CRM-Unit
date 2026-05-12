@@ -8,8 +8,9 @@ from contextlib import asynccontextmanager
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from fastapi import FastAPI
 
+from ..research import AnomalyDetector
 from .config import settings
-from . import algo_anomaly, algo_recurrence
+from . import algo_recurrence
 from .llm_pipeline import init_llm
 from ..database import DBManager
 from ..kafka import KafkaManager, Consumer
@@ -61,8 +62,8 @@ async def lifespan(_app: FastAPI):
 
     # 6. Scheduler
     scheduler.add_job(kafka.poll_crm, "interval", seconds=settings.POLL_INTERVAL_SEC, id="poller")
-    scheduler.add_job(algo_anomaly.check_volume_anomaly, "interval", minutes=10, id="vol_anomaly")
-    scheduler.add_job(algo_anomaly.check_topic_shift, "interval", minutes=10, id="topic_shift")
+    scheduler.add_job(AnomalyDetector.check_volume_anomaly, "interval", minutes=10, id="vol_anomaly")
+    scheduler.add_job(AnomalyDetector.check_topic_shift, "interval", minutes=10, id="topic_shift")
     scheduler.add_job(algo_recurrence.close_stale_clusters, "interval", hours=1, id="close_clusters")
     scheduler.start()
     logger.info("Scheduler started")

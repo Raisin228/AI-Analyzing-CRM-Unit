@@ -32,6 +32,9 @@ class Settings(BaseSettings):
     ANOMALY_ZSCORE_THRESHOLD: float = 2.5
     ANOMALY_KL_THRESHOLD: float = 0.5
 
+    # Время запрета на выброс повторных событий
+    COOLDOWN_SEC: int = 4 * 3600
+
     @property
     def database_url(self) -> str:
         """DSN для asyncpg (прямое подключение)."""

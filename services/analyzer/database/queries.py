@@ -129,10 +129,16 @@ class DAO:
                 cluster_id,
             )
 
-    # ── anomaly queries ───────────────────────────────────────────────────────
+    # ─ anomaly queries ─
 
     @classmethod
     async def count_negative_last_24h(cls) -> int:
+        """
+        Получить кол-во негативных отзывов за последние 24 часа.
+
+        :return: кол-во негативных отзывов.
+        """
+
         async with DBManager.get().pool.acquire() as conn:
             return await conn.fetchval(
                 """
@@ -144,6 +150,12 @@ class DAO:
 
     @classmethod
     async def count_negative_by_day_7d(cls) -> list[int]:
+        """
+        Получить кол-во негативных отзывов за последние 7 дней.
+
+        :return: кол-во негативных отзывов.
+        """
+
         async with DBManager.get().pool.acquire() as conn:
             rows = await conn.fetch(
                 """
@@ -159,6 +171,12 @@ class DAO:
 
     @classmethod
     async def issue_category_counts_24h(cls) -> dict[str, int]:
+        """
+        Считаю кол-во созданных сущностей-отзывов по каждой категории.
+
+        :return: словарь: "категория": кол-во обращений за последние сутки.
+        """
+
         async with DBManager.get().pool.acquire() as conn:
             rows = await conn.fetch(
                 """
@@ -174,6 +192,12 @@ class DAO:
 
     @classmethod
     async def issue_category_counts_7d(cls) -> dict[str, int]:
+        """
+        Считаю кол-во созданных сущностей-отзывов по каждой категории.
+
+        :return: словарь: "категория": кол-во обращений за последнюю неделю.
+        """
+
         async with DBManager.get().pool.acquire() as conn:
             rows = await conn.fetch(
                 """

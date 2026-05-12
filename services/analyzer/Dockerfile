@@ -32,5 +32,6 @@ COPY services/analyzer/database/ ./analyzer/database/
 COPY services/analyzer/kafka/ ./analyzer/kafka/
 COPY services/analyzer/redis_service/ ./analyzer/redis_service/
 COPY services/analyzer/Embeddings/ ./analyzer/Embeddings/
+COPY services/analyzer/research/ ./analyzer/research/
 
 CMD ["uvicorn", "analyzer.app.main:app", "--host", "0.0.0.0", "--port", "8001"]
